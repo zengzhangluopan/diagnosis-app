@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
 观复·电商诊断 - 密码保护入口
-Streamlit Cloud部署时把启动文件设为 main.py
+Streamlit Cloud启动文件，验证通过后import app模块
 密码在 Streamlit Cloud → Settings → Secrets 中配置: app_password = "你的密码"
 默认密码: guanfu2026
 """
 import streamlit as st
 import os
+import sys
 
+# ===== 密码保护 =====
 def check_password():
     def password_entered():
         if st.session_state["password"] == st.secrets.get("app_password", "guanfu2026"):
@@ -30,8 +32,12 @@ def check_password():
 
 if not check_password():
     st.stop()
+# ===== 密码保护结束 =====
 
-# 验证通过，执行主应用
-app_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.py")
-with open(app_path, "r", encoding="utf-8") as f:
-    exec(f.read(), {"__name__": "__main__", "__file__": app_path})
+# 设置项目路径
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, APP_DIR)
+sys.path.insert(0, os.path.join(APP_DIR, 'scripts'))
+
+# 验证通过后直接import app，app.py的所有streamlit代码会在当前上下文中执行
+import app
