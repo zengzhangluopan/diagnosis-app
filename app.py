@@ -24,6 +24,32 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, APP_DIR)
 sys.path.insert(0, os.path.join(APP_DIR, 'scripts'))
 
+
+# ===== 密码保护 =====
+def check_password():
+    def password_entered():
+        if st.session_state["password"] == st.secrets.get("app_password", "guanfu2026"):
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        st.markdown("## \U0001f510 \u89c2\u590d\u00b7\u7535\u5546\u8bca\u65ad")
+        st.text_input("\u8bf7\u8f93\u5165\u8bbf\u95ee\u5bc6\u7801", type="password", on_change=password_entered, key="password")
+        st.caption("\u9996\u6b21\u8bbf\u95ee\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u83b7\u53d6\u5bc6\u7801")
+        return False
+    if not st.session_state["password_correct"]:
+        st.markdown("## \U0001f510 \u89c2\u590d\u00b7\u7535\u5546\u8bca\u65ad")
+        st.text_input("\u5bc6\u7801\u9519\u8bef\uff0c\u8bf7\u91cd\u65b0\u8f93\u5165", type="password", on_change=password_entered, key="password")
+        st.error("\u5bc6\u7801\u4e0d\u6b63\u786e")
+        return False
+    return True
+
+if not check_password():
+    st.stop()
+# ===== 密码保护结束 =====
+
 from parse_csv import parse_files
 from run_diagnosis import run_diagnosis
 
