@@ -199,6 +199,15 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Global error display - catch any unhandled exception
+import traceback as _tb_mod
+_orig_show_error = st.exception
+
+def _safe_rerun():
+    pass
+
+# Wrap the entire script execution to catch errors
+
 # 自定义CSS
 st.markdown("""
 <style>
