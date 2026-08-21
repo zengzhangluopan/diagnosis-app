@@ -1,6 +1,7 @@
 [server]
 headless = true
 port = 8501
+maxUploadSize = 50
 
 [theme]
 primaryColor = "#005FD3"
