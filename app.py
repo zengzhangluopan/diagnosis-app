@@ -1985,74 +1985,81 @@ else:
     st.markdown("")
     
     # 检查文件上传状态
-    files_ready = file1 is not None or file2 is not None or file3 is not None
-    
-    if files_ready:
-        uploaded_files = []
-        if file1:
-            uploaded_files.append(file1)
-        if file2:
-            uploaded_files.append(file2)
-        if file3:
-            uploaded_files.append(file3)
-        
-        # 数据完整性预检
-        file_names = [f.name for f in uploaded_files]
-        found, missing = check_data_completeness(file_names)
-        
-        if missing:
-            missing_types = '、'.join([m['type'] for m in missing])
-            st.warning(f"已上传 {len(uploaded_files)} 个文件，但缺少：{missing_types}。部分诊断模块将无法运行。")
-            with st.expander("查看缺少的数据及获取方式"):
-                for m in missing:
-                    st.markdown(f"- **{m['type']}**：无法诊断 {'、'.join(m['required_for'])}。获取方式：{m['tip']}")
-        else:
-            st.success(f"已上传 {len(uploaded_files)} 个文件，数据完整，可运行全量诊断")
-        
-        if st.button("🚀 开始诊断", type="primary", use_container_width=True):
-            temp_dir = tempfile.mkdtemp()
-            file_paths = []
-            
-            for f in uploaded_files:
-                temp_path = os.path.join(temp_dir, f.name)
-                with open(temp_path, 'wb') as out:
-                    out.write(f.getbuffer())
-                file_paths.append(temp_path)
-            
-            with st.spinner("正在解析文件并运行诊断引擎..."):
-                progress = st.progress(0, text="解析文件中...")
-                time.sleep(0.3)
-                progress.progress(30, text="识别类目和商品...")
-                time.sleep(0.3)
-                progress.progress(60, text="运行18维度评分...")
-                time.sleep(0.3)
-                
-                result = run_full_diagnosis(file_paths)
-                
-                progress.progress(100, text="诊断完成！")
-                time.sleep(0.3)
-            
-            if isinstance(result, dict) and result.get('status') == 'need_selection':
-                st.session_state.need_selection = True
-                st.session_state.available_products = result['available_products']
-                st.session_state.parsed_data = result.get('parsed_data')
-                st.session_state.uploaded_files = file_paths
-                st.session_state.uploaded_file_names = file_names
-                st.rerun()
+    try:
+        files_ready = file1 is not None or file2 is not None or file3 is not None
+
+        if files_ready:
+            uploaded_files = []
+            if file1:
+                uploaded_files.append(file1)
+            if file2:
+                uploaded_files.append(file2)
+            if file3:
+                uploaded_files.append(file3)
+
+            # 数据完整性预检
+            file_names = [f.name for f in uploaded_files]
+            found, missing = check_data_completeness(file_names)
+
+            if missing:
+                missing_types = '、'.join([m['type'] for m in missing])
+                st.warning(f"已上传 {len(uploaded_files)} 个文件，但缺少：{missing_types}。部分诊断模块将无法运行。")
+                with st.expander("查看缺少的数据及获取方式"):
+                    for m in missing:
+                        st.markdown(f"- **{m['type']}**：无法诊断 {'、'.join(m['required_for'])}。获取方式：{m['tip']}")
             else:
-                st.session_state.diagnosis_result = result
-                st.session_state.uploaded_files = file_paths
-                st.session_state.uploaded_file_names = file_names
-                st.rerun()
-    
-    else:
-        st.markdown("""
-        <div class="upload-zone">
-            👆 请上传至少1个文件开始诊断<br>
-            <small>支持 .csv / .xls / .xlsx 格式，推荐上传全部3个文件获得完整诊断</small>
-        </div>
-        """, unsafe_allow_html=True)
-    
+                st.success(f"已上传 {len(uploaded_files)} 个文件，数据完整，可运行全量诊断")
+
+            if st.button("🚀 开始诊断", type="primary", use_container_width=True):
+                temp_dir = tempfile.mkdtemp()
+                file_paths = []
+
+                for f in uploaded_files:
+                    temp_path = os.path.join(temp_dir, f.name)
+                    with open(temp_path, 'wb') as out:
+                        out.write(f.getbuffer())
+                    file_paths.append(temp_path)
+
+                with st.spinner("正在解析文件并运行诊断引擎..."):
+                    progress = st.progress(0, text="解析文件中...")
+                    time.sleep(0.3)
+                    progress.progress(30, text="识别类目和商品...")
+                    time.sleep(0.3)
+                    progress.progress(60, text="运行18维度评分...")
+                    time.sleep(0.3)
+
+                    result = run_full_diagnosis(file_paths)
+
+                    progress.progress(100, text="诊断完成！")
+                    time.sleep(0.3)
+
+                if isinstance(result, dict) and result.get('status') == 'need_selection':
+                    st.session_state.need_selection = True
+                    st.session_state.available_products = result['available_products']
+                    st.session_state.parsed_data = result.get('parsed_data')
+                    st.session_state.uploaded_files = file_paths
+                    st.session_state.uploaded_file_names = file_names
+                    st.rerun()
+                else:
+                    st.session_state.diagnosis_result = result
+                    st.session_state.uploaded_files = file_paths
+                    st.session_state.uploaded_file_names = file_names
+                    st.rerun()
+
+        else:
+            st.markdown("""
+            <div class="upload-zone">
+                👆 请上传至少1个文件开始诊断<br>
+                <small>支持 .csv / .xls / .xlsx 格式，推荐上传全部3个文件获得完整诊断</small>
+            </div>
+            """, unsafe_allow_html=True)
+
+    except Exception as e:
+        import traceback
+        st.error('⚠️ 文件处理出错：' + str(e))
+        with st.expander('查看详细错误信息'):
+            st.code(traceback.format_exc())
+
     # 底部说明
     st.markdown("---")
     st.caption("💡 数据安全：文件在云端安全处理，不会被存储或分享")
