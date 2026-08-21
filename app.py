@@ -333,7 +333,7 @@ if not st.session_state.authenticated:
     with col2:
         pwd = st.text_input("密码", type="password")
         if st.button("进入系统"):
-            if pwd == "19121479116":
+            if pwd == "guanfu2026":
                 st.session_state.authenticated = True
                 st.rerun()
             else:
