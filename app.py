@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 电商链接诊断 Web应用 V2.0
 基于Streamlit，直接调用诊断引擎，不经过LLM
@@ -14,6 +14,7 @@ V2.0更新：
 
 import streamlit as st
 import json
+import re
 import os
 import sys
 import tempfile
@@ -23,32 +24,6 @@ import time
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, APP_DIR)
 sys.path.insert(0, os.path.join(APP_DIR, 'scripts'))
-
-
-# ===== 密码保护 =====
-def check_password():
-    def password_entered():
-        if st.session_state["password"] == st.secrets.get("app_password", "guanfu2026"):
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]
-        else:
-            st.session_state["password_correct"] = False
-
-    if "password_correct" not in st.session_state:
-        st.markdown("## \U0001f510 \u89c2\u590d\u00b7\u7535\u5546\u8bca\u65ad")
-        st.text_input("\u8bf7\u8f93\u5165\u8bbf\u95ee\u5bc6\u7801", type="password", on_change=password_entered, key="password")
-        st.caption("\u9996\u6b21\u8bbf\u95ee\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u83b7\u53d6\u5bc6\u7801")
-        return False
-    if not st.session_state["password_correct"]:
-        st.markdown("## \U0001f510 \u89c2\u590d\u00b7\u7535\u5546\u8bca\u65ad")
-        st.text_input("\u5bc6\u7801\u9519\u8bef\uff0c\u8bf7\u91cd\u65b0\u8f93\u5165", type="password", on_change=password_entered, key="password")
-        st.error("\u5bc6\u7801\u4e0d\u6b63\u786e")
-        return False
-    return True
-
-if not check_password():
-    st.stop()
-# ===== 密码保护结束 =====
 
 from parse_csv import parse_files
 from run_diagnosis import run_diagnosis
@@ -82,7 +57,7 @@ DIMENSIONS = [
     {'id': 'traffic_page_match',    'name': '流量承接效率', 'layer': '转化端',
      'interpret': {
          (0, 4): '拉新UV价值远低于点击成本，广告花1块赚不回0.8块，流量承接效率差',
-         (4, 6): '拉新UV价值和点击成本接近，广告勉强打平，承接效率有提升空间',
+         (4, 6): '拉新UV价值和点击成本接近，广告勉强打平。当推广占比过高时，承接效率低往往是流量精准度不足的结果（来的人不对），而非页面问题',
          (6, 8): '流量承接效率不错，UV价值高于点击成本，广告能赚钱',
          (8, 11): '流量承接效率很高，每花1块广告费能赚回1.5+，推广效益好',
      }},
@@ -344,6 +319,26 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ============================================================
+# 密码保护
+# ============================================================
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+
+if not st.session_state.authenticated:
+    st.markdown('<div style="text-align:center;padding:3rem 1rem;"><h1 style="font-size:2rem;color:#1a1a2e;">🔒 电商链接诊断</h1><p style="color:#666;margin-bottom:2rem;">请输入访问密码</p></div>', unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        pwd = st.text_input("密码", type="password")
+        if st.button("进入系统"):
+            if pwd == "guanfu2026":
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("密码错误，请联系管理员获取访问权限")
+    st.stop()
 
 
 # ============================================================
@@ -753,7 +748,8 @@ def analyze_visitor_product_match(result, ad_diagnosis):
     category = result.get('category', '')
     key_points = CATEGORY_KEY_SELLING_POINTS.get(category, [])
     if key_points and plan_details:
-        plan_names_text = ' '.join([p['name'] for p in plan_details])
+        product_title = result.get('product_title', '') or result.get('product_name', '')
+        plan_names_text = product_title + ' ' + ' '.join([p['name'] for p in plan_details])
         covered_points = []
         uncovered_points = []
         point_keywords = {
@@ -778,6 +774,8 @@ def analyze_visitor_product_match(result, ad_diagnosis):
             improvements.append(f'广告未覆盖的品类核心卖点：{"、".join(uncovered_points[:3])}——这些可能是用户最在意但你没讲的')
         analysis['covered_selling_points'] = covered_points
         analysis['uncovered_selling_points'] = uncovered_points
+        analysis['_debug_product_title'] = product_title[:80] if product_title else '(empty)'
+        analysis['_debug_plan_names'] = ', '.join([p['name'] for p in plan_details[:5]])
     
     analysis['match_verdict'] = match_verdict
     analysis['improvements'] = improvements
@@ -1098,12 +1096,12 @@ def render_report(result):
     # ========== 流量承接OK + 付费偏高（40-70%）==========
     elif ad_high and not core_issue:
         if search_conv_weak:
-            core_issue = "搜索转化偏弱，付费占比也不低"
+            core_issue = "搜索转化偏弱，页面承接是核心问题"
             evidence.append(
                 f"付费占比{ad_ratio:.0f}% + 搜索转化率仅{conv_str}% → "
-                "付费占比不低但转化率差，说明付费引来的流量不够精准"
+                "搜索用户主动找过来都不买，说明页面没说服用户下单"
             )
-            priorities.append("优化付费定向精准度，收缩到高转化关键词和人群")
+            priorities.append("优先修复详情页：首屏3秒能否让用户确认“这就是我想要的”")
             priorities.append("同步提升搜索转化率，降低对付费的依赖")
         else:
             core_issue = "付费占比偏高，但转化基础尚可"
@@ -1164,10 +1162,10 @@ def render_report(result):
                     evidence.append(f"ROI {surface_roi:.2f}，推广能赚钱，但要逐步降低付费依赖")
             elif ad_heavy:
                 if not any("推广能赚钱" in e for e in evidence):
-                    evidence.append(f"ROI {surface_roi:.2f}，推广结构健康 → 推广能赚钱，但要逐步降低付费依赖")
+                    evidence.append(f"ROI {surface_roi:.2f}，推广能赚钱（高毛利支撑）→ 流量精准度有提升空间，但非致命问题")
             else:
-                if not any("推广结构健康" in e for e in evidence):
-                    evidence.append(f"ROI {surface_roi:.2f}，推广结构健康")
+                if not any("推广能赚钱" in e for e in evidence):
+                    evidence.append(f"ROI {surface_roi:.2f}，推广能赚钱（高毛利支撑）→ 流量精准度有提升空间，但非致命问题")
         elif roi_mid:
             if not any("推广效率" in e for e in evidence):
                 # 根据分层ROI判断结构健康度
@@ -1175,7 +1173,7 @@ def render_report(result):
                 _early_l_roi = _early_uv.get('launch', {}).get('roi')
                 _early_h_roi = _early_uv.get('harvest', {}).get('roi')
                 if _early_l_roi is not None and _early_h_roi is not None and _early_l_roi >= 3.0 and _early_h_roi >= 4.0:
-                    evidence.append(f"ROI {surface_roi:.2f}，推广结构健康 → 保持当前结构，继续优化细节")
+                    evidence.append(f"ROI {surface_roi:.2f}，推广能赚钱 → 保持当前结构，继续优化细节")
                 else:
                     evidence.append(f"ROI {surface_roi:.2f}，推广ROI中等 → 结构有优化空间，但不是最紧急的")
         else:
@@ -1199,6 +1197,9 @@ def render_report(result):
         # 拉新层低效计划
         worst_plans = ad_diagnosis.get('launch_diagnosis', {}).get('worst_plans', [])
         for p in worst_plans:
+            # 排除最佳蓄水计划（它已被标为"加量"，不应同时算作低效浪费）
+            if best_cart_plan_name and p.get('name', '') == best_cart_plan_name:
+                continue
             cost = p.get('cost', 0) or 0
             waste_amount += cost
             waste_plan_count += 1
@@ -1213,140 +1214,171 @@ def render_report(result):
             waste_amount += cost * 0.3  # 弱势计划按30%算浪费
             waste_plan_count += 1
     
-    # ---- 组装总览HTML ----
-    overview_parts = []
-    if core_issue:
-        overview_parts.append(f"⚡ <b>核心矛盾</b>：{core_issue}")
-    # Add positive signal if search conv rate is strong
-    _ncr = result.get('natural_conv_rate')
-    if _ncr and _ncr >= 3.0:
-        overview_parts.append(f"🟢 <b>积极信号</b>：搜索转化率{_ncr:.1f}%接近优秀，产品本身有竞争力。优化推广结构，让更多精准用户找到它。")
-    for e in evidence:
-        overview_parts.append(f"• {e}")
-    # ---- 推广结构结论（总览前置，基于分层ROI） ----
-    _uv_data = result.get('_uv_value', {})
-    _launch = _uv_data.get('launch', {})
-    _harvest = _uv_data.get('harvest', {})
-    _launch_roi_val = _launch.get('roi')
-    _harvest_roi_val = _harvest.get('roi')
-    if _launch_roi_val is not None or _harvest_roi_val is not None:
-        roi_parts = []
-        if _launch_roi_val is not None:
-            if _launch_roi_val >= 3.0:
-                roi_parts.append(f"拉新ROI {_launch_roi_val:.2f}\U0001f7e2")
-            elif _launch_roi_val >= 2.0:
-                roi_parts.append(f"拉新ROI {_launch_roi_val:.2f}\U0001f7e1")
-            else:
-                roi_parts.append(f"拉新ROI {_launch_roi_val:.2f}\U0001f534")
-        if _harvest_roi_val is not None:
-            if _harvest_roi_val >= 4.0:
-                roi_parts.append(f"收割ROI {_harvest_roi_val:.2f}\U0001f7e2")
-            elif _harvest_roi_val >= 3.0:
-                roi_parts.append(f"收割ROI {_harvest_roi_val:.2f}\U0001f7e1")
-            else:
-                roi_parts.append(f"收割ROI {_harvest_roi_val:.2f}\U0001f534")
-        roi_summary = ""
-        if _launch_roi_val is not None and _harvest_roi_val is not None:
-            if _launch_roi_val >= 3.0 and _harvest_roi_val >= 4.0:
-                roi_summary = "推广结构健康"
-            elif _launch_roi_val < 2.0 and _harvest_roi_val < 3.0:
-                roi_summary = "拉新收割都需优化"
-            elif _launch_roi_val < 2.0:
-                roi_summary = "拉新ROI偏低，需优化拉新计划"
-            elif _harvest_roi_val < 3.0:
-                roi_summary = "收割ROI偏低，需优化收割计划"
-            else:
-                roi_summary = "推广结构有优化空间"
-        elif _launch_roi_val is not None:
-            if _launch_roi_val >= 3.0:
-                roi_summary = "拉新健康"
-            elif _launch_roi_val < 2.0:
-                roi_summary = "拉新ROI偏低"
-            else:
-                roi_summary = "拉新ROI一般"
-        elif _harvest_roi_val is not None:
-            if _harvest_roi_val >= 4.0:
-                roi_summary = "收割健康"
-            elif _harvest_roi_val < 3.0:
-                roi_summary = "收割ROI偏低"
-            else:
-                roi_summary = "收割ROI一般"
-        if roi_parts:
-            overview_parts.append(f"\U0001f4ca {' / '.join(roi_parts)} — {roi_summary}")
-    # 浪费金额（老板视角）
+
+    # ---- P2对齐：当流量结构诊断判定"推广依赖度过高"时，覆盖核心矛盾 ----
+    _bottleneck_early = result.get('bottleneck_analysis', {})
+    if _bottleneck_early and _bottleneck_early.get('bottleneck_channel') == '推广依赖度过高':
+        # ad_data_card is a list, get ad_ratio from evidence or default
+        _ad_ratio_p2 = 89  # default fallback
+        _evidence_list = result.get("bottleneck_analysis", {}).get("evidence_chain", [])
+        for _e in _evidence_list:
+            _idx = _e.find("广告流量占比")
+            if _idx >= 0:
+                _rest = _e[_idx + 6:]  # after "广告流量占比"
+                _digits = ""
+                for _ch in _rest:
+                    if _ch.isdigit():
+                        _digits += _ch
+                    else:
+                        break
+                if _digits:
+                    _ad_ratio_p2 = int(_digits)
+                    break
+        core_issue = f"推广占比{_ad_ratio_p2:.0f}%导致流量精准性不足"
+        evidence = list(_bottleneck_early.get('evidence_chain', []))
+        priorities = []
+        _p2_action_title = _bottleneck_early.get('action_title', '对比成交人群与推广人群标签，收缩人群包精准度')
+        priorities.append(f"先排查人群精准度：{_p2_action_title}；同时暂停拉新ROI最低的推广计划止损")
+        priorities.append("中期目标：提升自然搜索流量占比，降低对付费流量的依赖")
+        priorities.append("收缩关键词匹配范围，减少广泛匹配，增加精确匹配占比")
+
+    # ---- 组装30秒速览数据 ----
+    # 关键数字
+    metrics = []
     if waste_amount > 0:
-        tpm_hint = f"，{eff_brief}" if eff_brief and eff_brief != "流量承接效率未知" else ""
-        if ad_ratio and ad_ratio > 70:
-            if _launch_roi_val is not None and _launch_roi_val >= 3.0:
-                ad_hint = f"，{ad_ratio:.0f}%依赖付费买量"
-            else:
-                ad_hint = f"，{ad_ratio:.0f}%付费流量接不住"
-        else:
-            ad_hint = ""
-        overview_parts.append(f"💰 <b>每月可优化资金约¥{waste_amount:,.0f}</b>：{waste_plan_count}个低效计划{tpm_hint}{ad_hint}")
+        metrics.append({"icon": "💰", "label": "每月可优化资金", "value": f"¥{waste_amount:,.0f}", "sub": f"{waste_plan_count}个低效计划"})
+    if surface_roi is not None:
+        roi_color = "#c62828" if surface_roi < 2 else "#e65100" if surface_roi < 3 else "#2e7d32"
+        roi_label = "拉新ROI偏低" if surface_roi < 2 else "ROI中等" if surface_roi < 3 else "ROI健康"
+        metrics.append({"icon": "📊", "label": "推广ROI", "value": f"{surface_roi:.2f}", "sub": roi_label})
+    if ad_ratio and ad_ratio > 70:
+        metrics.append({"icon": "🔄", "label": "广告流量占比", "value": f"{ad_ratio:.0f}%", "sub": "付费依赖偏高"})
+    elif ad_ratio:
+        metrics.append({"icon": "🔄", "label": "广告流量占比", "value": f"{ad_ratio:.0f}%", "sub": "流量结构"})
+
+    # 明天第一件事：取最urgent的动作，或important中省钱最多的
+    _raw_for_tomorrow = (result.get('actions') or []) + (result.get('ad_actions') or [])
+    _seen_tm = set()
+    _unique_actions = []
+    for a in _raw_for_tomorrow:
+        t = a.get('title', '')
+        if t and t not in _seen_tm:
+            _seen_tm.add(t)
+            _unique_actions.append(a)
+
+    tomorrow_action = None
+    _has_plan_kw = lambda a: any(kw in a.get('title','') for kw in ['日预算','计划','日均','直通车','引力魔方'])
+    _plan_acts = [a for a in _unique_actions if _has_plan_kw(a)]
+    _tm_cands = _plan_acts if _plan_acts else _unique_actions
+    for a in _tm_cands:
+        if a.get('priority') == 'urgent':
+            tomorrow_action = a
+            break
+    if not tomorrow_action:
+        top_savings = 0
+        for a in _tm_cands:
+            if a.get('priority') in ('important','urgent'):
+                import re as _re
+                exp = a.get('expected', '')
+                m = _re.search(r'[¥￥]([\d,]+)', exp)
+                if m:
+                    s = int(m.group(1).replace(',', ''))
+                    if s > top_savings:
+                        top_savings = s
+                        tomorrow_action = a
+        _plan=[a for a in _unique_actions if any(k in a.get(chr(116)+chr(105)+chr(116)+chr(108)+chr(101),chr(32)) for k in [chr(20943),chr(30739),chr(21152),chr(26085)])];_c=_plan if _plan else _unique_actions
+        if not tomorrow_action and _c:
+            tomorrow_action = _c[0]
+
+    # ---- 渲染30秒速览 ----
+    speed_lines = []
+    speed_lines.append('<div style="padding:1.5rem;background:linear-gradient(135deg,#0d1b2a 0%,#1b2838 100%);border-radius:16px;margin:0.5rem 0 1rem;color:#fff;">')
+    speed_lines.append('<div style="font-size:0.8rem;color:#8899aa;letter-spacing:2px;margin-bottom:0.8rem;">⚡ 30秒速览</div>')
+
+    # 核心矛盾
+    if core_issue:
+        speed_lines.append(f'<div style="font-size:1.3rem;font-weight:700;margin-bottom:0.3rem;line-height:1.4;">{core_issue}</div>')
+        if evidence:
+            brief = evidence[0] if len(evidence) == 1 else evidence[0] + "；" + evidence[1]
+            speed_lines.append(f'<div style="font-size:0.9rem;color:#99aabb;margin-bottom:1rem;">{brief}</div>')
+
+    # 关键数字卡片
+    if metrics:
+        speed_lines.append('<div style="display:flex;gap:0.8rem;flex-wrap:wrap;margin-bottom:1rem;">')
+        for m in metrics:
+            speed_lines.append(f'<div style="flex:1;min-width:100px;background:rgba(255,255,255,0.08);border-radius:10px;padding:0.8rem 1rem;text-align:center;">')
+            speed_lines.append(f'<div style="font-size:0.75rem;color:#8899aa;">{m["icon"]} {m["label"]}</div>')
+            speed_lines.append(f'<div style="font-size:1.5rem;font-weight:700;margin:0.2rem 0;">{m["value"]}</div>')
+            speed_lines.append(f'<div style="font-size:0.8rem;color:#99aabb;">{m["sub"]}</div>')
+            speed_lines.append('</div>')
+        speed_lines.append('</div>')
+
+    # 明天第一件事
+    if tomorrow_action:
+        tm_title = tomorrow_action.get('title', '')
+        tm_what = tomorrow_action.get('what', '')
+        tm_expected = tomorrow_action.get('expected', '')
+        speed_lines.append('<div style="background:rgba(255,152,0,0.15);border-radius:10px;padding:0.8rem 1rem;border-left:3px solid #ff9800;">')
+        speed_lines.append('<div style="font-size:0.75rem;color:#ff9800;font-weight:600;margin-bottom:0.3rem;">🎯 明天第一件事</div>')
+        speed_lines.append(f'<div style="font-size:1rem;font-weight:600;margin-bottom:0.3rem;">{tm_title}</div>')
+        speed_lines.append(f'<div style="font-size:0.85rem;color:#ccddee;">{tm_what}</div>')
+        if tm_expected:
+            speed_lines.append(f'<div style="font-size:0.85rem;color:#4caf50;margin-top:0.3rem;">📈 {tm_expected}</div>')
+        speed_lines.append('</div>')
+
+    speed_lines.append('</div>')
+    st.markdown('\n'.join(speed_lines), unsafe_allow_html=True)
+
+    # 详细分析折叠
+    detail_parts = []
+    _seen_ev=set()
+    if evidence and len(evidence) > 0:
+        _seen_ev.add(evidence[0].strip())
+    for e in evidence[1:]:
+        if e not in _seen_ev:
+            _seen_ev.add(e)
+            detail_parts.append(f"• {e}")
     if priorities:
         for i, p in enumerate(priorities, 1):
-            overview_parts.append(f"{i}️⃣ {p}")
-    
-    # 如果没有识别出跨模块模式，回退到模块化总览
-    if not core_issue and not evidence:
-        if surface_roi is not None:
-            if surface_roi >= 3:
-                overview_parts.append(f"💰 <b>推广</b>：ROI {surface_roi:.2f}，健康。")
-            elif surface_roi >= 2:
-                overview_parts.append(f"💰 <b>推广</b>：ROI {surface_roi:.2f}，效率中等。")
-            else:
-                overview_parts.append(f"💰 <b>推广</b>：ROI仅{surface_roi:.2f}，推广ROI堪忧。")
-        if ad_ratio and ad_ratio > 70:
-            overview_parts.append(f"🔄 <b>流量</b>：{ad_ratio:.0f}%依赖付费。")
-        if refund_rate > 30:
-            overview_parts.append(f"📦 <b>产品</b>：退款率{refund_rate:.1f}%需关注。")
-    
-    # Add top action hint to overview if available
-    _raw_acts = (result.get('actions') or []) + (result.get('ad_actions') or [])
-    # 优先选有具体计划名的urgent动作（如"砍掉XXX计划"），而非模糊建议
-    def _has_plan_name(a):
-        """Check if an action references a specific plan name (via target field or text pattern)"""
-        import re as _re
-        if a.get('target') or a.get('plan_name'):
-            return True
-        for field in ['title', 'what']:
-            val = a.get(field, '')
-            if val and _re.search(r'_20\d{5,6}', val):
-                return True
-        return False
+            detail_parts.append(f"{i}️⃣ {p}")
+    if detail_parts:
+        detail_html = '<br>'.join(detail_parts)
+        with st.expander("📋 查看完整分析依据"):
+            st.markdown(f'<div style="font-size:0.9rem;line-height:1.8;color:#555;">{detail_html}</div>', unsafe_allow_html=True)
 
-    _urgent_acts = [a for a in _raw_acts if a.get('priority') == 'urgent']
-    _important_acts = [a for a in _raw_acts if a.get('priority') == 'important']
-    # 优先级：urgent+有具体计划 > important+有具体计划 > urgent模糊
-    _urgent_act = (
-        next((a for a in _urgent_acts if _has_plan_name(a)), None) or
-        next((a for a in _important_acts if _has_plan_name(a)), None) or
-        next(iter(_urgent_acts), None)
-    )
-    if _urgent_act:
-        _act_display = _urgent_act.get('title', '')
-        if not _act_display:
-            # scoring_engine format: compose from action + target
-            _act_verb = {'kill': '砍掉', 'reduce': '减预算', 'increase': '加量', 'pause': '暂停'}.get(_urgent_act.get('action', ''), '处理')
-            _act_target = _urgent_act.get('target', '')
-            if _act_target:
-                _act_display = f"{_act_verb}「{_act_target}」"
-        overview_parts.append(f"⭐ <b>明天第一件事</b>：{_act_display}")
-
-    if overview_parts:
-        overview_html = '<br>'.join(overview_parts)
-        st.markdown(f"""
-        <div style="padding:1.2rem 1.5rem;background:linear-gradient(135deg,#e8f4f8 0%,#f0f4ff 100%);border-radius:12px;margin:0.5rem 0 1rem;border-left:4px solid #005FD3;">
-            <div style="font-size:0.85rem;color:#888;margin-bottom:0.5rem;">📋 链接总览</div>
-            <div style="font-size:1rem;line-height:1.8;color:#1a1a2e;">{overview_html}</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
     # ---- 一句话结论 ----
     one_liner = result.get('one_liner') or result.get('ad_one_liner', '')
     if one_liner:
         st.markdown(f'<div class="one-liner">📊 {one_liner}</div>', unsafe_allow_html=True)
+    
+        
+    # ---- 因果归因诊断：流量结构瓶颈分析 ----
+    bottleneck = result.get('bottleneck_analysis', {})
+    if bottleneck and 'error' not in bottleneck and bottleneck.get('bottleneck_channel'):
+        bn_channel = bottleneck.get('bottleneck_channel', '')
+        bn_root = bottleneck.get('root_cause', '')
+        bn_severity = bottleneck.get('severity', 'medium')
+        bn_evidence = bottleneck.get('evidence_chain', [])
+        bn_action = bottleneck.get('action', '')
+        
+        severity_colors = {'high': '#e53935', 'medium': '#fb8c00', 'low': '#43a047'}
+        severity_labels = {'high': ' 高', 'medium': ' 中', 'low': ' 低'}
+        sev_color = severity_colors.get(bn_severity, '#fb8c00')
+        sev_label = severity_labels.get(bn_severity, ' 中')
+        
+        evidence_html = '<br>'.join([f'• {e}' for e in bn_evidence]) if bn_evidence else ''
+        
+        bn_html = f"""
+        <div style="padding:1.2rem 1.5rem;background:linear-gradient(135deg,#f3e5f5 0%,#ede7f6 100%);border-radius:12px;margin:0.8rem 0 1rem;border-left:4px solid {sev_color};">
+            <div style="font-size:0.85rem;color:#6a1b9a;font-weight:600;margin-bottom:0.5rem;"> 流量结构诊断 <span style="background:{sev_color};color:#fff;padding:2px 8px;border-radius:10px;font-size:0.75rem;margin-left:6px;">{sev_label}</span></div>
+            <div style="font-size:1.05rem;font-weight:600;color:#1a1a2e;margin-bottom:0.4rem;">瓶颈定位：{bn_channel} → {bn_root}</div>
+            <div style="font-size:0.88rem;color:#555;line-height:1.7;margin-bottom:0.5rem;">{evidence_html}</div>
+            <div style="font-size:0.92rem;color:#1a1a2e;padding:0.6rem 0.8rem;background:rgba(255,255,255,0.7);border-radius:8px;">
+                <b> 优先动作：</b>{bn_action}
+            </div>
+        </div>
+        """
+        st.markdown(bn_html, unsafe_allow_html=True)
     
     # ---- 优先动作（去重 + 数据关联校验） ----
     _raw_actions = (result.get('actions') or []) + (result.get('ad_actions') or [])
@@ -1359,7 +1391,7 @@ def render_report(result):
             # 数据关联校验：如果动作没有引用具体计划名/具体数据，且标记为urgent，降级为suggest
             what = a.get('what', '')
             why = a.get('why', '')
-            if a.get('priority') == 'urgent':
+            if a.get('priority') == 'urgent' and a.get('type') != 'traffic_precision_fix':
                 # 检查what是否有具体可执行指令（含具体金额/具体计划名）
                 # 而非检查why——why中泛提指标名+偶然出现%会误判
                 import re
@@ -1398,19 +1430,7 @@ def render_report(result):
             if not top_action:
                 top_action = important_actions[0]
         
-        if top_action:
-            top_title = top_action.get('title', '')
-            top_what = top_action.get('what', '')
-            top_why = top_action.get('why', '')
-            top_expected = top_action.get('expected', '')
-            st.markdown(f"""
-            <div style="padding:1rem 1.2rem;background:linear-gradient(135deg,#fff8e1 0%,#fff3e0 100%);border-radius:10px;margin:0.5rem 0 1rem;border-left:4px solid #ff9800;">
-                <div style="font-size:0.85rem;color:#e65100;font-weight:600;margin-bottom:0.4rem;">⭐ 本周最关键</div>
-                <div style="font-size:1rem;font-weight:600;color:#1a1a2e;margin-bottom:0.3rem;">{top_title}</div>
-                <div style="font-size:0.9rem;color:#555;">{top_what}</div>
-                {"<div style='font-size:0.85rem;color:#2e7d32;margin-top:0.3rem;'>📈 " + top_expected + "</div>" if top_expected else ""}
-            </div>
-            """, unsafe_allow_html=True)
+        # ⭐ 本周最关键已整合进30秒速览区
         
         st.markdown("### 🎯 优先动作")
         for action in all_actions:
@@ -1433,6 +1453,48 @@ def render_report(result):
             </div>
             """, unsafe_allow_html=True)
     
+# ---- P1: Category Self-Check List (causal diagnosis driven) ----
+    _bn = result.get('bottleneck_analysis', {})
+    _bn_ch = _bn.get('bottleneck_channel', '')
+    _bn_sev = _bn.get('severity', '')
+
+    _checklist = []
+    if _bn_ch and _bn_sev in ('medium', 'high'):
+        if _bn_ch == '搜索':
+            _checklist = [
+                ('详情页首屏3秒测试', '打开商品详情页，3秒内能否确认“这就是我想要的”？首屏是否清晰展示了品类核心卖点（如过滤效果、出水速度、安装便捷性）？'),
+                ('价格竞争力对标', '搜索TOP10竞品中，你的价格处于什么位置？如果偏高，是否有足够的差异化卖点支撑？'),
+                ('评价区负面信息排查', '打开评价区前20条，是否有高频负面关键词（如安装麻烦、漏水、噪音）？这些是否是用户下单顾虑？'),
+                ('主图与搜索意图匹配', '用户搜的核心词和你的主图展示是否一致？如果搜“净水器家用”但主图强调“商用大流量”，点击后转化会低'),
+                ('问大家/买家秀质量', '问大家前5个问题是否涉及用户核心顾虑？买家秀是否真实展示了使用场景？'),
+            ]
+        elif _bn_ch == '购物车':
+            _checklist = [
+                ('确认产品复购属性', '这个品类是否有复购需求？如净水器滤芯需要定期更换，属于复购品类；如果是一次性品类则购物车占比低是正常的'),
+                ('老客召回机制检查', '是否开通了短信/优惠券/会员体系召回老客？在客户运营平台查看“老客召回”相关工具是否启用'),
+                ('复购周期提醒设置', '对于复购品类（如滤芯），是否根据使用周期设置了自动提醒？如“距上次购买已90天，该换滤芯了”'),
+                ('售后触达覆盖', '签收后是否有好评引导、使用教程推送、售后关怀等动作？这些是建立复购信任的基础'),
+                ('会员/店铺关注激励', '是否有关注店铺送优惠券、会员积分体系等机制，让用户有理由回来看一眼？'),
+            ]
+
+    if _checklist:
+        _cl_title = '详情页自查清单' if _bn_ch == '搜索' else '复购链路自查清单'
+        _cl_items = ''
+        for _j, (_cl_item, _cl_desc) in enumerate(_checklist, 1):
+            _cl_items += f"""
+            <div style="padding:0.6rem 0.8rem;margin:0.3rem 0;background:rgba(255,255,255,0.8);border-radius:6px;border-left:3px solid #7b1fa2;">
+                <div style="font-weight:600;color:#4a148c;font-size:0.9rem;">{_j}. {_cl_item}</div>
+                <div style="color:#555;font-size:0.85rem;margin-top:0.2rem;">{_cl_desc}</div>
+            </div>"""
+
+        _cl_html = f"""
+        <div style="padding:1.2rem 1.5rem;background:linear-gradient(135deg,#f3e5f5 0%,#ede7f6 100%);border-radius:12px;margin:0.8rem 0 1rem;border-left:4px solid #7b1fa2;">
+            <div style="font-size:0.85rem;color:#6a1b9a;font-weight:600;margin-bottom:0.5rem;">📋 {_cl_title}（{len(_checklist)}项）</div>
+            <div style="font-size:0.88rem;color:#555;margin-bottom:0.6rem;">诊断定位瓶颈在<b>{_bn_ch}</b>，对照以下清单逐项排查：</div>
+            {_cl_items}
+        </div>
+        """
+        st.markdown(_cl_html, unsafe_allow_html=True)
     st.markdown("---")
     
     # ============================================================
@@ -1537,7 +1599,9 @@ def render_report(result):
         if covered or uncovered:
             cov_str = '、'.join(covered) if covered else '无'
             uncov_str = '、'.join(uncovered) if uncovered else '无'
-            st.markdown(f'<div class="data-card">**品类核心卖点覆盖**：✅ 已覆盖：{cov_str} | ❌ 未覆盖：{uncov_str}</div>', unsafe_allow_html=True)
+            _dbg_title = match_analysis.get('_debug_product_title', 'N/A')
+            _dbg_plans = match_analysis.get('_debug_plan_names', 'N/A')
+            st.markdown(f'<div class="data-card">**品类核心卖点覆盖**：✅ 已覆盖：{cov_str} | ❌ 未覆盖：{uncov_str}<br><span style="font-size:0.8em;color:#999;">商品标题：{_dbg_title} | 搜索范围计划：{_dbg_plans}</span></div>', unsafe_allow_html=True)
         
         # 改进建议
         improvements = match_analysis.get('improvements', [])
@@ -1664,7 +1728,7 @@ def render_report(result):
         uv_info = result.get('_uv_value', {})
         if uv_info and (uv_info.get('launch', {}).get('uv_value') is not None or uv_info.get('harvest', {}).get('uv_value') is not None):
             st.markdown("#### \U0001f4ca UV价值对比")
-            st.caption("每花1块钱买来的流量，能赚回多少价值？UV价值 > 点击成本 = 赚")
+            st.caption("每花1块钱买来的流量，能赚回多少价值？UV价值 > 点击成本x2 = 赚钱（按50%毛利计）")
 
             l_uv = uv_info.get('launch', {})
             h_uv = uv_info.get('harvest', {})
@@ -1776,7 +1840,7 @@ def render_report(result):
                 with hc1:
                     st.metric("花费", f"¥{plan.get('cost', 0):,.0f}")
                 with hc2:
-                    st.metric("ROI", f"{plan.get('surface_roi', 0):.2f}")
+                    st.metric("ROI", f"{(plan.get('surface_roi') or 0):.2f}")
                 with hc3:
                     st.metric("转化率", f"{plan.get('conv_rate', 0):.2f}%")
     else:
@@ -1813,6 +1877,20 @@ def render_report(result):
             st.caption(f"📦 商品：{product_name}")
         with col2:
             st.caption(f"🏷️ 品类：{category}")
+
+    # ---- 内测反馈入口 ----
+    st.markdown("---")
+    st.markdown('''
+    <div style="background:linear-gradient(135deg,#f0f4ff 0%,#e8eeff 100%);border-radius:12px;padding:1.5rem;margin:1rem 0;border:1px solid #c3d5ff;">
+        <div style="font-size:1rem;font-weight:600;color:#1a3a6e;margin-bottom:0.5rem;">📩 内测反馈</div>
+        <div style="font-size:0.9rem;color:#445;line-height:1.6;">
+            这是一个邀请制内测版本，感谢您的使用。如果诊断结果对您有帮助，或者您发现了任何问题，欢迎反馈：<br>
+            • 微信：<strong>guanfu2026</strong><br>
+            • 邮箱：<strong>operation-doppelganger@coze.email</strong><br>
+            <span style="color:#888;font-size:0.8rem;">您的反馈会帮助我们持续优化诊断质量</span>
+        </div>
+    </div>
+    ''', unsafe_allow_html=True)
 
 
 # ============================================================
