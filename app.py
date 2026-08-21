@@ -333,7 +333,7 @@ if not st.session_state.authenticated:
     with col2:
         pwd = st.text_input("密码", type="password")
         if st.button("进入系统"):
-            if pwd == "guanfu2026":
+            if pwd == "19121479116":
                 st.session_state.authenticated = True
                 st.rerun()
             else:
@@ -1885,8 +1885,8 @@ def render_report(result):
         <div style="font-size:1rem;font-weight:600;color:#1a3a6e;margin-bottom:0.5rem;">📩 内测反馈</div>
         <div style="font-size:0.9rem;color:#445;line-height:1.6;">
             这是一个邀请制内测版本，感谢您的使用。如果诊断结果对您有帮助，或者您发现了任何问题，欢迎反馈：<br>
-            • 微信：<strong>guanfu2026</strong><br>
-            • 邮箱：<strong>operation-doppelganger@coze.email</strong><br>
+            • 微信：<strong>19121479116</strong><br>
+            • 邮箱：<strong>345700101@qq.com</strong><br>
             <span style="color:#888;font-size:0.8rem;">您的反馈会帮助我们持续优化诊断质量</span>
         </div>
     </div>
