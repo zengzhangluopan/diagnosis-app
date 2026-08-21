@@ -1897,6 +1897,9 @@ def render_report(result):
 # 主页面
 # ============================================================
 
+# Debug: test if main page loads
+st.info("✅ 主页面已加载！如果看到此消息说明密码验证通过，页面正在渲染中...")
+
 # Header
 st.markdown('<div class="main-header">📊 电商链接诊断</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">看见数据背后的真相，做对每一个经营决策。</div>', unsafe_allow_html=True)
