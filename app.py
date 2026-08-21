@@ -344,8 +344,7 @@ if not st.session_state.authenticated:
 # ============================================================
 # 会话状态初始化
 # ============================================================
-try:
-    if 'diagnosis_result' not in st.session_state:
+if 'diagnosis_result' not in st.session_state:
     st.session_state.diagnosis_result = None
 if 'parsed_data' not in st.session_state:
     st.session_state.parsed_data = None
@@ -2057,8 +2056,3 @@ else:
     # 底部说明
     st.markdown("---")
     st.caption("💡 数据安全：文件仅在你本地处理，不会上传到任何第三方服务器")
-
-except Exception as _e:
-    import traceback as _tb
-    st.error('⚠️ 应用运行出错，请联系管理员修复')
-    st.code(_tb.format_exc())
